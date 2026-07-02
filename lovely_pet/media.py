@@ -316,10 +316,14 @@ class MediaCanvas(QWidget):
         widget_rect = self.rect()
         if widget_rect.isEmpty() or source_size.isEmpty():
             return widget_rect
+        # PyQt6: QSize.scaled() takes only (target_size, aspect_mode).
+        # The Qt.TransformationMode argument was removed; smooth
+        # resampling is now controlled at the QPainter level via
+        # RenderHint.SmoothPixmapTransform, which we set in _draw_pixmap
+        # and _draw_image.
         scaled = source_size.scaled(
             widget_rect.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
         )
         x = (widget_rect.width() - scaled.width()) // 2
         y = (widget_rect.height() - scaled.height()) // 2
