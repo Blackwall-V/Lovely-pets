@@ -82,7 +82,15 @@ class SleepWatcher(QObject):
     # Setup
     # ------------------------------------------------------------------
     def _connect(self) -> None:
-        from PyQt6.QtDBus import QDBusConnection
+        try:
+            from PyQt6.QtDBus import QDBusConnection
+        except ImportError as exc:
+            print(
+                f"[lovely-pet] QtDBus not available: {exc}. "
+                "Sleep-aware pausing is disabled.",
+                file=sys.stderr,
+            )
+            return
 
         bus = QDBusConnection.sessionBus()
         if not bus.isConnected():

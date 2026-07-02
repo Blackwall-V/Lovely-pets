@@ -1,13 +1,15 @@
 # Python packages installable from PyPI.
 #
-# The PyQt6 ecosystem is split across several wheel packages — you
-# almost certainly want all of them. QtDBus and QtMultimedia in
-# particular are required by sleep_watcher.py and media.py
-# respectively and are NOT pulled in by the base PyQt6 wheel.
+# The base PyQt6 wheel bundles QtCore, QtGui, QtWidgets, and (as of
+# PyQt6 6.7) QtDBus. The only sub-package we need as a separate wheel
+# is QtMultimedia; it is OPTIONAL — if it is missing or has no wheel
+# for your Python version (Python 3.14 at time of writing ships no
+# manylinux build for it), Lovely-pets will still launch but video
+# support will be disabled and a clear error will be reported when
+# you try to load a video.
 PyQt6>=6.5
 PyQt6-Qt6>=6.5
-PyQt6-QtDBus>=6.5
-PyQt6-QtMultimedia>=6.5
+PyQt6-QtMultimedia>=6.5; python_version < "3.14"
 
 # System packages that must be installed via the system package manager
 # (these are NOT pip-installable on most distros).

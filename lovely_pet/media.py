@@ -163,7 +163,10 @@ class MediaCanvas(QWidget):
         self._movie.setCacheMode(QMovie.CacheMode.CacheNone)
         self._movie.setSpeed(100)
         self._movie.frameChanged.connect(self._on_frame_changed)
-        self._movie.errorOccurred.connect(self._on_movie_error)
+        # PyQt6: QMovie's error signal is named ``error`` (not
+        # ``errorOccurred`` like QMediaPlayer). Signature is
+        # ``error(QMovie.MovieError)``.
+        self._movie.error.connect(self._on_movie_error)
         self._movie.start()
 
     def _on_frame_changed(self, _frame_number: int) -> None:
@@ -190,7 +193,7 @@ class MediaCanvas(QWidget):
         except (TypeError, RuntimeError):
             pass
         try:
-            self._movie.errorOccurred.disconnect(self._on_movie_error)
+            self._movie.error.disconnect(self._on_movie_error)
         except (TypeError, RuntimeError):
             pass
         self._movie = None
@@ -200,7 +203,18 @@ class MediaCanvas(QWidget):
     # Video backend
     # ------------------------------------------------------------------
     def _load_video(self, path: str) -> None:
-        from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
+        try:
+            from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
+        except ImportError as exc:
+            # PyQt6-QtMultimedia ships as a separate wheel and may not
+            # be available for every Python version (notably 3.14 at
+            # time of writing). Fall back to a clean error so the user
+            # sees why video was rejected, rather than a raw ImportError.
+            raise RuntimeError(
+                "Video playback requires the PyQt6-QtMultimedia wheel, "
+                "which is not installed in this environment. Install it "
+                "with: pip install PyQt6-QtMultimedia"
+            ) from exc
 
         self._sink = QVideoSink(self)
         self._sink.videoFrameChanged.connect(self._on_video_frame)
