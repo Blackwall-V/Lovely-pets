@@ -36,9 +36,22 @@ that persists across all workspaces without intercepting clicks.
 ```bash
 git clone https://github.com/Blackwall-V/Lovely-pets.git
 cd Lovely-pets
-python -m venv .venv
+python -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+The `--system-site-packages` flag is required: the system tray uses
+`PyGObject` (`import gi`) which is shipped as a system package on
+every distro and is not pip-installable on most of them. Without the
+flag the venv is isolated and `gi` is invisible — Lovely-pets will
+still launch but with a "no tray icon" warning.
+
+If you already created the venv without that flag, you can flip
+it after the fact by editing `.venv/pyvenv.cfg`:
+
+```ini
+include-system-site-packages = true
 ```
 
 ### System packages
