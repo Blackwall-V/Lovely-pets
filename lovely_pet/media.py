@@ -50,6 +50,12 @@ def is_media(path: str) -> bool:
     return is_gif(path) or is_video(path)
 
 
+def file_dialog_filter() -> str:
+    """A ``QFileDialog``-compatible filter string for the supported types."""
+    patterns = " ".join(f"*{ext}" for ext in GIF_SUFFIXES + VIDEO_SUFFIXES)
+    return f"Pet media ({patterns});;All files (*)"
+
+
 class MediaCanvas(QWidget):
     """A widget that paints an animated media source centered and
     aspect-fit inside its rect.
@@ -310,6 +316,7 @@ __all__ = [
     "GIF_SUFFIXES",
     "VIDEO_SUFFIXES",
     "MediaCanvas",
+    "file_dialog_filter",
     "is_gif",
     "is_media",
     "is_video",

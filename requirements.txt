@@ -1,1 +1,29 @@
+# Python packages installable from PyPI.
 PyQt6>=6.5
+PyQt6-Qt6>=6.5
+
+# System packages that must be installed via the system package manager
+# (these are NOT pip-installable on most distros).
+#
+# Arch / Manjaro:
+#   pacman -S --needed \
+#       qt6-wayland \
+#       libayatana-appindicator3 \
+#       python-gobject \
+#       gst-libav gst-plugins-good gst-plugins-bad   # QMediaPlayer codecs
+#
+# Debian / Ubuntu:
+#   apt install \
+#       qml6-module-qtquick \
+#       libayatana-appindicator3-1 gir1.2-ayatanaappindicator3-0.1 \
+#       python3-gi gir1.2-gtk-3.0 \
+#       gstreamer1.0-libav gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+#       ffmpeg
+#
+# Fedora:
+#   dnf install \
+#       qt6-qtwayland \
+#       libayatana-appindicator-gtk3 \
+#       python3-gobject \
+#       gstreamer1-plugins-good gstreamer1-plugins-bad-free \
+#       ffmpeg
