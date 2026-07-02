@@ -70,6 +70,7 @@ def main() -> int:
     # Defer Qt imports until we actually want to build a window.
     from lovely_pet.app import build_application, install_signal_handlers
     from lovely_pet.media import MediaCanvas
+    from lovely_pet.sleep_watcher import SleepWatcher
     from lovely_pet.tray import TrayIcon
     from lovely_pet.window import PetWindow
 
@@ -129,6 +130,18 @@ def main() -> int:
         print(
             "[lovely-pet] running without tray icon. Use Ctrl-C to quit.",
             file=sys.stderr,
+        )
+
+    # --- Sleep-aware pausing -----------------------------------------
+    # Subscribes to org.freedesktop.ScreenSaver.ActiveChanged over the
+    # session bus. Pauses the canvas on display sleep, resumes on
+    # wake. If the user manually paused via the tray, we leave them
+    # alone.
+    sleep_watcher = SleepWatcher(canvas)
+    if not sleep_watcher.is_connected():
+        _debug_log(
+            args.debug,
+            "sleep watcher offline: ActiveChanged subscription failed",
         )
 
     window.show()
