@@ -68,7 +68,6 @@ def build_application(argv: Sequence[str]) -> "QApplication":
     configure_wayland_env()
 
     from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QGuiApplication
     from PyQt6.QtWidgets import QApplication
 
     # QApplication (not QGuiApplication) is required for QSystemTrayIcon
@@ -77,8 +76,11 @@ def build_application(argv: Sequence[str]) -> "QApplication":
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)
     app.setApplicationDisplayName(APP_DISPLAY_NAME)
-    # High-DPI pixmaps off; we render via QPainter at the size we want.
-    app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, False)
+    # Qt 6 enables high-DPI pixmaps by default; in PyQt6 the
+    # ``AA_UseHighDpiPixmaps`` attribute has been removed and the
+    # replacement (``AA_DisableHighDpiScaling``) covers a different
+    # concern. We render via QPainter at the size we want, so the
+    # default behaviour is fine; we only document the choice here.
 
     _assert_wayland(app)
     return app

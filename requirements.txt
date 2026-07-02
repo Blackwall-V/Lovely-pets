@@ -1,6 +1,13 @@
 # Python packages installable from PyPI.
+#
+# The PyQt6 ecosystem is split across several wheel packages — you
+# almost certainly want all of them. QtDBus and QtMultimedia in
+# particular are required by sleep_watcher.py and media.py
+# respectively and are NOT pulled in by the base PyQt6 wheel.
 PyQt6>=6.5
 PyQt6-Qt6>=6.5
+PyQt6-QtDBus>=6.5
+PyQt6-QtMultimedia>=6.5
 
 # System packages that must be installed via the system package manager
 # (these are NOT pip-installable on most distros).

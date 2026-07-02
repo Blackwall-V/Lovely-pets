@@ -98,7 +98,8 @@ class SleepWatcher(QObject):
             SCREENSAVER_OBJECT_PATH,
             SCREENSAVER_INTERFACE,
             "ActiveChanged",
-            self._handle_active_changed,
+            self,                          # receiver (must be a QObject)
+            self._handle_active_changed,   # slot (bound method)
         )
         if not ok:
             print(
