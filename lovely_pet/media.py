@@ -66,6 +66,11 @@ class MediaCanvas(QWidget):
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        # Let mouse events pass through to the parent PetWindow so
+        # drag-to-move and right-click context menu work on the
+        # parent widget. Without this, the canvas fills the entire
+        # window and swallows all clicks.
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         # --- GIF backend state -----------------------------------------
         self._movie: Optional["QMovie"] = None  # type: ignore[name-defined]
