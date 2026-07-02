@@ -8,11 +8,12 @@ Usage:
 """
 import sys
 
-from lovely_pet.app import build_application
+from lovely_pet.app import build_application, install_signal_handlers
 
 
 def main() -> int:
     app = build_application(sys.argv)
+    install_signal_handlers(app)
     return app.exec()
 
 
