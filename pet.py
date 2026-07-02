@@ -6,19 +6,13 @@ Usage:
     python pet.py /path/to/pet.gif      # launch with a specific pet
     python pet.py --size 150            # 150% of native size
     python pet.py --corner top-left     # pin to a different corner
-    python pet.py --init-config         # write a sample config and exit
-    python pet.py --print-config        # print effective config and exit
     python pet.py --help                # show full options
 """
 import os
 import sys
 
 from lovely_pet.cli import parse_args
-from lovely_pet.config import (
-    DEFAULT_CONFIG_PATH,
-    load_config,
-    write_sample_config,
-)
+from lovely_pet.config import DEFAULT_CONFIG_PATH, load_config, write_sample_config
 
 DEFAULT_SAMPLE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "assets", "sample_pet.gif"
@@ -34,7 +28,6 @@ def _debug_log(enabled: bool, *parts) -> None:
 def main() -> int:
     config_path = os.environ.get("LOVELY_PET_CONFIG") or DEFAULT_CONFIG_PATH
     config = load_config(config_path)
-
     args = parse_args(sys.argv[1:], config=config, config_path=config_path)
     _debug_log(args.debug, f"effective args: {args}")
 
@@ -60,7 +53,6 @@ def main() -> int:
     from lovely_pet.app import build_application, install_signal_handlers
     from lovely_pet.media import MediaCanvas
     from lovely_pet.menu import build_context_menu
-    from lovely_pet.sleep_watcher import SleepWatcher
     from lovely_pet.window import PetWindow
 
     app = build_application(sys.argv)
@@ -83,31 +75,21 @@ def main() -> int:
         print(f"[lovely-pet] no source at {source!r}.", file=sys.stderr)
         window.resize(200, 200)
 
-    # Apply initial scale
+    # Size the window to the GIF's native size, scaled by --size
     native = canvas.native_size()
     if native.isValid():
-        if args.size_percent != 100:
-            from PyQt6.QtCore import QSize
-            scaled = QSize(
-                max(1, int(native.width() * args.size_percent / 100)),
-                max(1, int(native.height() * args.size_percent / 100)),
-            )
-            window.resize_to(scaled)
-        else:
-            window.resize_to(native)
+        from PyQt6.QtCore import QSize
+        w = max(1, int(native.width() * args.size_percent / 100))
+        h = max(1, int(native.height() * args.size_percent / 100))
+        window.resize_to(QSize(w, h))
 
-    # --- Right-click context menu ---------------------------------------
+    # Right-click context menu (resize, move, pause, load, quit)
     def _show_context_menu(pos):
         menu = build_context_menu(window, canvas, app.quit)
         menu.exec(window.mapToGlobal(pos))
 
     window.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     window.customContextMenuRequested.connect(_show_context_menu)
-
-    # --- Sleep-aware pausing (async, non-blocking) ----------------------
-    sleep_watcher = SleepWatcher(canvas)
-    if not sleep_watcher.is_connected():
-        _debug_log(args.debug, "sleep watcher: no screensaver service (normal on Hyprland)")
 
     window.show()
     canvas.show()

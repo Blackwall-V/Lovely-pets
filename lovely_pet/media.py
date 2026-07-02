@@ -66,11 +66,6 @@ class MediaCanvas(QWidget):
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        # Let mouse events pass through to the parent PetWindow so
-        # drag-to-move and right-click context menu work on the
-        # parent widget. Without this, the canvas fills the entire
-        # window and swallows all clicks.
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         # --- GIF backend state -----------------------------------------
         self._movie: Optional["QMovie"] = None  # type: ignore[name-defined]
@@ -322,10 +317,6 @@ class MediaCanvas(QWidget):
         if widget_rect.isEmpty() or source_size.isEmpty():
             return widget_rect
         # PyQt6: QSize.scaled() takes only (target_size, aspect_mode).
-        # The Qt.TransformationMode argument was removed; smooth
-        # resampling is now controlled at the QPainter level via
-        # RenderHint.SmoothPixmapTransform, which we set in _draw_pixmap
-        # and _draw_image.
         scaled = source_size.scaled(
             widget_rect.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
@@ -333,6 +324,40 @@ class MediaCanvas(QWidget):
         x = (widget_rect.width() - scaled.width()) // 2
         y = (widget_rect.height() - scaled.height()) // 2
         return QRect(x, y, scaled.width(), scaled.height())
+
+    # ------------------------------------------------------------------
+    # Mouse event forwarding to parent PetWindow
+    # ------------------------------------------------------------------
+    # The canvas covers the entire window, so it receives all mouse
+    # events. We forward them to the parent so drag-to-move and the
+    # right-click context menu work without WA_TransparentForMouseEvents
+    # (which caused the window to lose all input and appear frozen).
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if self.parent() is not None:
+            self.parent().mousePressEvent(event)
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self.parent() is not None:
+            self.parent().mouseMoveEvent(event)
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self.parent() is not None:
+            self.parent().mouseReleaseEvent(event)
+        else:
+            super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        # Forward right-click to the parent's custom context menu handler.
+        if self.parent() is not None:
+            self.parent().customContextMenuRequested.emit(event.pos())
+            event.accept()
+        else:
+            super().contextMenuEvent(event)
 
 
 __all__ = [
