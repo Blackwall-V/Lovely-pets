@@ -151,12 +151,6 @@ def main() -> int:
         else:
             window.resize_to(native)
 
-    _debug_log(
-        args.debug,
-        f"window size: {window.size().width()}x{window.size().height()} "
-        f"at {window.pos().x()},{window.pos().y()}",
-    )
-
     # --- System tray ---------------------------------------------------
     # The tray degrades gracefully if AppIndicator3 is missing; the app
     # is still killable via Ctrl-C.
@@ -185,6 +179,18 @@ def main() -> int:
 
     window.show()
     canvas.show()
+    # Defensive: if the Wayland compositor repositioned us at show
+    # time (some compositors clamp windows to visible regions), force
+    # the anchor corner again. This is a no-op when we're already
+    # where we want to be.
+    window.apply_position()
+
+    _debug_log(
+        args.debug,
+        f"window: {window.size().width()}x{window.size().height()} "
+        f"at {window.pos().x()},{window.pos().y()}, "
+        f"corner={args.corner.value}, margin={args.margin}",
+    )
 
     return app.exec()
 

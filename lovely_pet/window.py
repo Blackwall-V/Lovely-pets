@@ -125,6 +125,16 @@ class PetWindow(QWidget):
         self._margin = max(0, int(margin))
         self._reposition()
 
+    def apply_position(self) -> None:
+        """Public alias for the internal anchor calculation.
+
+        Call this after ``show()`` to re-anchor the window — some
+        Wayland compositors reposition mapped windows before they
+        become visible, and a no-op reposition after show is the
+        cheapest way to recover the bottom-right corner.
+        """
+        self._reposition()
+
     def resize_to(self, size: QSize) -> None:
         """Resize the window while honouring the screen-size cap."""
         clamped = self._clamp_size(size)
@@ -151,8 +161,14 @@ class PetWindow(QWidget):
         return QSize(w, h)
 
     def _reposition(self) -> None:
-        if not self.isVisible():
-            return
+        """Move the window to its anchored position on the active screen.
+
+        Safe to call before ``show()`` — the move is buffered and
+        applied at the next expose. The previous implementation
+        early-returned on ``not self.isVisible()``, which left the
+        window at Qt's default (0, 0) on first launch and made the
+        pet look like a normal top-left app window.
+        """
         screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
             return
