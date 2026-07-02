@@ -91,23 +91,75 @@ Once running:
 - Right-click the **tray icon** → **Quit** to exit. (Ctrl-C in the
   terminal works too.)
 
+## Configuration
+
+Lovely-pets reads an INI file at
+`~/.config/lovely-pet/config.ini` (overridable via the
+`LOVELY_PET_CONFIG` environment variable) and uses its values as
+the defaults for every CLI flag. **CLI flags always win over the
+file.**
+
+Bootstrap a sample config:
+
+```bash
+python pet.py --init-config   # writes ~/.config/lovely-pet/config.ini
+```
+
+Inspect the effective config (config + CLI overrides, after merge):
+
+```bash
+python pet.py --print-config
+```
+
+Sample file:
+
+```ini
+# Path to the default pet (GIF or video). Leave commented to fall
+# back to the bundled sample at assets/sample_pet.gif.
+# source = /home/v/Downloads/yoru-chainsaw-man.gif
+
+# Scale of the native source size, in percent. Range: 1-100.
+size = 100
+
+# Anchor corner on the screen. One of:
+#   top-left, top-right, bottom-left, bottom-right, center
+corner = bottom-right
+
+# Pixels of breathing room between the pet and the screen edge.
+margin = 32
+
+# Verbose diagnostic logging on stderr. true or false.
+debug = false
+```
+
+Lines starting with `#` are comments. Unknown keys are logged and
+ignored — a typo in one key will not stop the app from launching.
+
+Use a non-default config file (e.g. for testing):
+
+```bash
+LOVELY_PET_CONFIG=/path/to/test.ini python pet.py
+```
+
 ## CLI reference
 
 ```
 usage: pet.py [-h] [--source SOURCE] [--size PCT]
               [--corner {top-left,top-right,bottom-left,bottom-right,center}]
-              [--margin PX] [--debug]
+              [--margin PX] [--debug] [--init-config] [--print-config]
               [source_pos]
 ```
 
-| Flag         | Description |
-|--------------|-------------|
-| `source_pos` | Positional: path to a `.gif` or video file |
-| `--source`   | Same as positional, explicit form wins if both given |
-| `--size`     | Scale 1–100% of native dimensions (default: 100) |
-| `--corner`   | Anchor corner on the screen (default: `bottom-right`) |
-| `--margin`   | Pixels of breathing room from the screen edge (default: 32) |
-| `--debug`    | Verbose diagnostic logging on stderr |
+| Flag            | Description |
+|-----------------|-------------|
+| `source_pos`    | Positional: path to a `.gif` or video file |
+| `--source`      | Same as positional, explicit form wins if both given |
+| `--size`        | Scale 1–100% of native dimensions (default: 100, from config) |
+| `--corner`      | Anchor corner on the screen (default: `bottom-right`, from config) |
+| `--margin`      | Pixels of breathing room from the screen edge (default: 32, from config) |
+| `--debug`       | Verbose diagnostic logging on stderr (default: false, from config) |
+| `--init-config` | Write a sample config to `~/.config/lovely-pet/config.ini` and exit |
+| `--print-config`| Print the effective config (after merging config + CLI) and exit |
 
 ## Project layout
 
@@ -118,6 +170,7 @@ Lovely-pets/
 │   ├── __init__.py
 │   ├── app.py                   # Wayland-enforcing QApplication
 │   ├── cli.py                   # argparse wrapper
+│   ├── config.py                # INI config loader + sample generator
 │   ├── media.py                 # GIF + video canvas
 │   ├── position.py              # Corner enum (Qt-free for headless CLI)
 │   ├── sleep_watcher.py         # D-Bus ScreenSaver listener

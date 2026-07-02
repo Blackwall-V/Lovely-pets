@@ -6,12 +6,20 @@ Usage:
     python pet.py /path/to/pet.gif      # launch with a specific pet
     python pet.py --size 50             # scale to 50% of native size
     python pet.py --corner top-left     # pin to a different corner
+    python pet.py --init-config         # write a sample config and exit
+    python pet.py --print-config        # print effective config and exit
     python pet.py --help                # show full options
 """
 import os
 import sys
 
 from lovely_pet.cli import parse_args
+from lovely_pet.config import (
+    DEFAULT_CONFIG_PATH,
+    PetConfig,
+    load_config,
+    write_sample_config,
+)
 
 DEFAULT_SAMPLE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "assets", "sample_pet.gif"
@@ -63,9 +71,34 @@ def _tray_toggle_pause(tray, canvas) -> None:
 
 
 def main() -> int:
-    # Parse CLI first so --help works without PyQt6 installed.
-    args = parse_args(sys.argv[1:])
-    _debug_log(args.debug, f"parsed args: {args}")
+    # --- Load config (CLI defaults) and parse args -------------------
+    config_path = os.environ.get("LOVELY_PET_CONFIG") or DEFAULT_CONFIG_PATH
+    config = load_config(config_path)
+
+    args = parse_args(sys.argv[1:], config=config, config_path=config_path)
+    _debug_log(args.debug, f"loaded config from {config_path}")
+    _debug_log(args.debug, f"effective args: {args}")
+
+    # --- Handle --init-config -----------------------------------------
+    # No Qt needed; do this first so it works in a headless terminal.
+    if args.init_config:
+        try:
+            path = write_sample_config()
+        except FileExistsError as exc:
+            print(f"[lovely-pet] {exc}", file=sys.stderr)
+            return 1
+        print(f"[lovely-pet] wrote sample config to {path}")
+        return 0
+
+    # --- Handle --print-config ----------------------------------------
+    if args.print_config:
+        print("[lovely-pet] effective configuration:")
+        print(f"  source       = {args.source!r}")
+        print(f"  size_percent = {args.size_percent}")
+        print(f"  corner       = {args.corner.value}")
+        print(f"  margin       = {args.margin}")
+        print(f"  debug        = {args.debug}")
+        return 0
 
     # Defer Qt imports until we actually want to build a window.
     from lovely_pet.app import build_application, install_signal_handlers
@@ -77,6 +110,11 @@ def main() -> int:
     app = build_application(sys.argv)
     install_signal_handlers(app)
     _debug_log(args.debug, f"Qt platform: {app.platformName()}")
+    _debug_log(
+        args.debug,
+        f"Hyprland WM_CLASS match: applicationName={app.applicationName()!r} "
+        f"(must equal 'lovely-pet' for windowrulev2 to apply)",
+    )
 
     window = PetWindow(corner=args.corner, margin=args.margin)
     window.setWindowTitle("Lovely Pet")
@@ -96,8 +134,9 @@ def main() -> int:
     else:
         print(
             f"[lovely-pet] no source file at {source!r}. "
-            "Provide a GIF path on the command line, or use the "
-            "tray 'Load Pet...' menu to pick one.",
+            "Provide a path on the command line, set `source =` in "
+            "~/.config/lovely-pet/config.ini, or use the tray "
+            "'Load Pet...' menu to pick one.",
             file=sys.stderr,
         )
         window.resize(128, 128)  # visible placeholder for empty state
