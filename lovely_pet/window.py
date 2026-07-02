@@ -1,21 +1,16 @@
-"""PetWindow: frameless, transparent, click-through overlay.
+"""PetWindow: frameless, transparent, draggable overlay.
 
-The window flag combination is what makes a Wayland compositor treat
-this as a non-interactive overlay. Hyprland's windowrulev2 directives
-in ``hyprland/windowrulev2.conf`` then pin the window across all
-workspaces, float it above tiled clients, and enable ``passthrough``
-so the compositor itself ignores mouse hits on this surface.
+The window is NOT click-through. The Hyprland Lua API (0.55.4) does
+not have a ``passthrough`` field, so compositor-level click-through
+is impossible. Instead, the window receives mouse events directly:
 
-The actual animated content is drawn by a child ``MediaCanvas``
-(see :mod:`lovely_pet.media`). PetWindow's only job is to host that
-canvas, size it, and place it on the right monitor at the right
-corner.
+* **Left-drag** moves the pet anywhere on screen.
+* **Right-click** opens a context menu (resize, reposition, pause,
+  load, quit) — see :func:`lovely_pet.menu.build_context_menu`.
 
-Position strategy
------------------
-Default placement is the bottom-right corner of the primary screen
-with a configurable margin. The compositor's ``availableGeometry``
-excludes taskbars / docks so the pet always sits on visible pixels.
+The actual animated content is drawn by a child ``MediaCanvas``.
+PetWindow's only job is to host that canvas, size it, place it, and
+forward mouse interactions.
 """
 from __future__ import annotations
 
@@ -28,7 +23,7 @@ from PyQt6.QtWidgets import QWidget
 from lovely_pet.position import Corner
 
 DEFAULT_MARGIN_PX = 32
-MAX_SCREEN_FRACTION = 0.5  # Cap pet size at half the screen
+MAX_SCREEN_FRACTION = 0.8  # Allow larger pets now that user can resize
 
 
 def _anchor_position(
@@ -37,10 +32,6 @@ def _anchor_position(
     corner: Corner,
     margin: int,
 ) -> QPoint:
-    """Return the top-left QPoint for a window of ``window_size`` anchored
-    at ``corner`` inside ``screen_rect`` with ``margin`` pixels of breathing
-    room from the screen edges.
-    """
     if corner is Corner.TOP_LEFT:
         return QPoint(screen_rect.left() + margin, screen_rect.top() + margin)
     if corner is Corner.TOP_RIGHT:
@@ -58,7 +49,6 @@ def _anchor_position(
             screen_rect.center().x() - window_size.width() // 2,
             screen_rect.center().y() - window_size.height() // 2,
         )
-    # BOTTOM_RIGHT
     return QPoint(
         screen_rect.right() - window_size.width() - margin,
         screen_rect.bottom() - window_size.height() - margin,
@@ -66,12 +56,7 @@ def _anchor_position(
 
 
 class PetWindow(QWidget):
-    """A frameless, transparent, click-through overlay window.
-
-    Set the media content by populating this window with a single
-    child widget (typically ``MediaCanvas``) that fills the entire
-    rect. The window itself never paints; it is a positioning shell.
-    """
+    """Frameless, transparent, draggable pet window."""
 
     def __init__(
         self,
@@ -81,75 +66,72 @@ class PetWindow(QWidget):
     ) -> None:
         super().__init__(parent)
 
-        # --- Window flags ------------------------------------------------
-        # FramelessWindowHint: no title bar, no borders.
-        # WindowStaysOnTopHint: above all normal windows.
-        # Tool: not in the taskbar / pager; not part of the task switcher.
-        # WindowTransparentForInput: Qt-level click-through. On Wayland
-        #   this works on the Wayland-EGL / QtWayland backend in
-        #   conjunction with the Hyprland ``passthrough`` rule.
-        # WindowDoesNotAcceptFocus: never takes keyboard focus.
-        # NoDropShadowWindowHint: we have transparent pixels, a server-
-        #   side shadow would draw a black box around the pet.
+        # Frameless, on-top, no taskbar entry, no drop shadow.
+        # WindowTransparentForInput is REMOVED — we need mouse events
+        # for drag + right-click menu. Click-through is not possible
+        # with the current Hyprland Lua API anyway (no passthrough field).
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
-            | Qt.WindowType.WindowTransparentForInput
-            | Qt.WindowType.WindowDoesNotAcceptFocus
             | Qt.WindowType.NoDropShadowWindowHint
         )
 
-        # --- Per-pixel alpha --------------------------------------------
-        # Without this Qt fills the widget rect with the palette base
-        # colour (usually black) and we lose the GIF's transparency.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        # No system background; we paint our own (transparent) pixels.
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        # Don't accept focus via Tab navigation.
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self._corner = corner
         self._margin = margin
+        self._drag_offset: Optional[QPoint] = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def set_corner(self, corner: Corner) -> None:
-        """Move the pet to a different anchor corner of the active screen."""
         self._corner = corner
         self._reposition()
 
     def set_margin(self, margin: int) -> None:
-        """Change the distance from the screen edge in pixels."""
         self._margin = max(0, int(margin))
         self._reposition()
 
     def apply_position(self) -> None:
-        """Public alias for the internal anchor calculation.
-
-        Call this after ``show()`` to re-anchor the window — some
-        Wayland compositors reposition mapped windows before they
-        become visible, and a no-op reposition after show is the
-        cheapest way to recover the bottom-right corner.
-        """
         self._reposition()
 
     def resize_to(self, size: QSize) -> None:
-        """Resize the window while honouring the screen-size cap."""
         clamped = self._clamp_size(size)
         if clamped == self.size():
             return
         self.resize(clamped)
-        self._reposition()
+
+    # ------------------------------------------------------------------
+    # Drag support
+    # ------------------------------------------------------------------
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = None
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
     # ------------------------------------------------------------------
     # Layout helpers
     # ------------------------------------------------------------------
     def _clamp_size(self, size: QSize) -> QSize:
-        """Cap the pet at MAX_SCREEN_FRACTION of the screen so a giant
-        source image cannot cover the entire desktop.
-        """
         screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
             return size
@@ -161,32 +143,9 @@ class PetWindow(QWidget):
         return QSize(w, h)
 
     def _reposition(self) -> None:
-        """Move the window to its anchored position on the active screen.
-
-        Safe to call before ``show()`` — the move is buffered and
-        applied at the next expose. The previous implementation
-        early-returned on ``not self.isVisible()``, which left the
-        window at Qt's default (0, 0) on first launch and made the
-        pet look like a normal top-left app window.
-        """
         screen = QGuiApplication.screenAt(self.pos()) or QGuiApplication.primaryScreen()
         if screen is None:
             return
         rect = screen.availableGeometry()
         target = _anchor_position(rect, self.size(), self._corner, self._margin)
         self.move(target)
-
-    # ------------------------------------------------------------------
-    # Event filters
-    # ------------------------------------------------------------------
-    def moveEvent(self, event) -> None:  # noqa: N802 (Qt naming)
-        super().moveEvent(event)
-        # If the user moves us between monitors (e.g. via a Hyprland
-        # window rule or a future drag handle), re-clamp to the new
-        # screen's geometry.
-        screen = QGuiApplication.screenAt(self.pos())
-        if screen is not None and screen != QGuiApplication.primaryScreen():
-            avail = screen.availableGeometry()
-            new_pos = _anchor_position(avail, self.size(), self._corner, self._margin)
-            if self.pos() != new_pos:
-                self.move(new_pos)
