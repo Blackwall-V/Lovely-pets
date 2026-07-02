@@ -40,6 +40,11 @@ def configure_wayland_env() -> None:
     # Disable Qt's automatic high-DPI scaling of raster bitmaps, which
     # can shred alpha edges on transparent GIFs. We resize via QPainter.
     os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "0")
+    # xdg-shell app_id defaults to the binary basename ("python3"
+    # when launched as `python pet.py`). Hyprland matches
+    # ``class:^(lovely-pet)$`` against the app_id, so we must set
+    # this explicitly. Must be in place before QApplication is built.
+    os.environ.setdefault("QT_WAYLAND_APP_ID", APP_NAME)
 
 
 def _assert_wayland(app) -> None:
