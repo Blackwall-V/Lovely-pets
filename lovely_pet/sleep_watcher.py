@@ -1,38 +1,36 @@
 """D-Bus ScreenSaver listener.
 
-Listens on the **session bus** for ``org.freedesktop.ScreenSaver``'s
-``ActiveChanged`` signal and pauses the media canvas when the screen
-blanks, resumes it when the screen wakes.
+Watches ``org.freedesktop.ScreenSaver`` over the session bus and
+pauses the media canvas when the screen blanks, resumes it when the
+screen wakes.
 
-Why QtDBus and not dbus-python / pydbus / jeepney?
--------------------------------------------------
-We are already inside a Qt event loop. QtDBus integrates with that
-loop natively — there is no GLib-to-Qt bridge to maintain, no
-``QSocketNotifier`` plumbing, and no second event loop to spin. The
-trade-off is a slightly more verbose Qt-style API, which is fine for
-a single signal we only ever subscribe to.
+Why polling instead of signal subscription?
+-------------------------------------------
+PyQt6's ``QDBusConnection.connect()`` only accepts a slot *string*
+(method name as a string), not a bound method or callable receiver
+— there is no ``QObject *receiver`` parameter in any of the three
+overloads. Signal subscription therefore requires decorating the
+handler with ``@pyqtSlot`` and passing ``handler.__name__`` as a
+string, which couples the connection to a metaobject lookup that
+behaves inconsistently across Qt versions and PyQt builds.
 
-What "ActiveChanged" means on a typical Wayland session
---------------------------------------------------------
-GNOME / KDE ship a real ``org.freedesktop.ScreenSaver`` service.
-On Hyprland the service is provided by ``xdg-desktop-portal``'s
-``Screensaver`` portal or, if no portal is running, by
-``gsd-screensaver-proxy`` from GNOME Settings Daemon. If no
-service is registered the signal simply never fires; we treat that
-as a no-op and the user can still pause via the tray.
+Polling ``GetActive()`` once per second is portable across every
+PyQt6 build we tested, the 1-second latency is invisible for sleep
+detection, and the D-Bus call is cheap (~50 µs locally) so the
+timer tick costs effectively nothing.
 
-User-pause vs auto-pause
+Manual-pause interaction
 ------------------------
 If the user has manually paused via the tray, we must not auto-resume
-the pet when the display wakes. The watcher remembers the canvas
-state at sleep-start and only reverts its own pause on wake.
+the pet when the display wakes. The watcher remembers whether it was
+the one that issued the pause and only reverts its own pause on wake.
 """
 from __future__ import annotations
 
 import sys
 from typing import Optional, TYPE_CHECKING
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 if TYPE_CHECKING:
     from lovely_pet.media import MediaCanvas
@@ -41,15 +39,21 @@ SCREENSAVER_BUS_NAME = "org.freedesktop.ScreenSaver"
 SCREENSAVER_OBJECT_PATH = "/org/freedesktop/ScreenSaver"
 SCREENSAVER_INTERFACE = "org.freedesktop.ScreenSaver"
 
+# How often we ask D-Bus whether the screen is blanked. 1 second is
+# fast enough that the user does not notice the pause latency when
+# the screen wakes, and slow enough that the D-Bus traffic is
+# negligible.
+POLL_INTERVAL_MS = 1000
+
 
 class SleepWatcher(QObject):
     """Pauses / resumes a :class:`MediaCanvas` in response to the
-    display-sleep D-Bus signal.
+    display-sleep D-Bus service.
 
     Signals
     -------
     sleepStarted()
-        Emitted when the screensaver / display blank is active.
+        Emitted when the screensaver / display blank becomes active.
     sleepEnded()
         Emitted when the display is awake again.
     """
@@ -61,10 +65,12 @@ class SleepWatcher(QObject):
         super().__init__(parent)
         self._canvas = canvas
         self._connected: bool = False
-        # True if we paused the canvas ourselves on sleep and therefore
-        # owe a resume on wake. False if the user had already paused
-        # manually — in which case we leave them alone.
+        # True if we paused the canvas ourselves and therefore owe a
+        # resume on wake. False if the user had already paused manually.
         self._auto_paused: bool = False
+        self._last_active: Optional[bool] = None
+        self._interface = None  # QDBusInterface, set in _connect
+        self._poll_timer: Optional[QTimer] = None
 
         self.sleepStarted.connect(self._on_sleep_started)
         self.sleepEnded.connect(self._on_sleep_ended)
@@ -75,7 +81,10 @@ class SleepWatcher(QObject):
     # Public API
     # ------------------------------------------------------------------
     def is_connected(self) -> bool:
-        """True if the D-Bus signal subscription actually went through."""
+        """True if the polling loop is running and the D-Bus service
+        answered at least once. False if the service is unavailable
+        and we degraded to a no-op.
+        """
         return self._connected
 
     # ------------------------------------------------------------------
@@ -83,7 +92,7 @@ class SleepWatcher(QObject):
     # ------------------------------------------------------------------
     def _connect(self) -> None:
         try:
-            from PyQt6.QtDBus import QDBusConnection
+            from PyQt6.QtDBus import QDBusConnection, QDBusInterface
         except ImportError as exc:
             print(
                 f"[lovely-pet] QtDBus not available: {exc}. "
@@ -101,33 +110,72 @@ class SleepWatcher(QObject):
             )
             return
 
-        ok = bus.connect(
+        self._interface = QDBusInterface(
             SCREENSAVER_BUS_NAME,
             SCREENSAVER_OBJECT_PATH,
             SCREENSAVER_INTERFACE,
-            "ActiveChanged",
-            self,                          # receiver (must be a QObject)
-            self._handle_active_changed,   # slot (bound method)
+            bus,
         )
-        if not ok:
+        if not self._interface.isValid():
             print(
-                "[lovely-pet] could not subscribe to "
-                "org.freedesktop.ScreenSaver.ActiveChanged; "
-                "sleep-aware pausing is disabled.",
+                "[lovely-pet] org.freedesktop.ScreenSaver is not "
+                "registered on the session bus. Install "
+                "xdg-desktop-portal or a screensaver proxy to enable "
+                "sleep-aware pausing.",
                 file=sys.stderr,
             )
+            self._interface = None
             return
 
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(POLL_INTERVAL_MS)
+        self._poll_timer.timeout.connect(self._poll_screensaver)
+        self._poll_timer.start()
+        # Prime the state so the first tick has a baseline to compare
+        # against; without this, the very first transition would be
+        # swallowed by the ``_last_active is None`` guard.
+        self._prime_initial_state()
         self._connected = True
 
     # ------------------------------------------------------------------
-    # D-Bus callback
+    # Polling
     # ------------------------------------------------------------------
-    def _handle_active_changed(self, active: bool) -> None:
-        if bool(active):
-            self.sleepStarted.emit()
-        else:
-            self.sleepEnded.emit()
+    def _prime_initial_state(self) -> None:
+        """Read the current state once so the first edge is detectable."""
+        active = self._query_active()
+        self._last_active = active
+
+    def _poll_screensaver(self) -> None:
+        active = self._query_active()
+        if active is None:
+            return
+        if self._last_active is not None and active != self._last_active:
+            if active:
+                self.sleepStarted.emit()
+            else:
+                self.sleepEnded.emit()
+        self._last_active = active
+
+    def _query_active(self) -> Optional[bool]:
+        """Synchronous D-Bus call. Returns ``None`` on any error."""
+        if self._interface is None:
+            return None
+        from PyQt6.QtDBus import QDBusMessage
+
+        try:
+            msg = self._interface.call("GetActive")
+        except Exception as exc:  # noqa: BLE001 — dbus can raise anything
+            print(
+                f"[lovely-pet] ScreenSaver.GetActive() failed: {exc}",
+                file=sys.stderr,
+            )
+            return None
+        if msg.type() != QDBusMessage.MessageType.ReplyMessage:
+            return None
+        args = msg.arguments()
+        if not args:
+            return None
+        return bool(args[0])
 
     # ------------------------------------------------------------------
     # Signal handlers
