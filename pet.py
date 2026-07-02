@@ -5,45 +5,54 @@ Usage:
     python pet.py                       # launch with bundled sample
     python pet.py /path/to/pet.gif      # launch with a specific pet
     python pet.py --size 50             # scale to 50% of native size
+    python pet.py --corner top-left     # pin to a different corner
+    python pet.py --help                # show full options
 """
 import os
 import sys
 
-from lovely_pet.app import build_application, install_signal_handlers
-from lovely_pet.media import MediaCanvas
-from lovely_pet.window import Corner, PetWindow
+from lovely_pet.cli import parse_args
 
 DEFAULT_SAMPLE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "assets", "sample_pet.gif"
 )
 
 
-def _resolve_source(argv: list[str]) -> str:
-    """Pick a GIF to load. CLI arg wins; otherwise the bundled sample.
-
-    Positional argv[1] is treated as a path. The full argparse wrapper
-    arrives in phase 5; this stub keeps phase 4 runnable.
-    """
-    for arg in argv[1:]:
-        if not arg.startswith("-"):
-            return arg
-    return DEFAULT_SAMPLE
+def _debug_log(enabled: bool, *parts) -> None:
+    if not enabled:
+        return
+    print("[lovely-pet]", *parts, file=sys.stderr)
 
 
 def main() -> int:
+    # Parse CLI first so --help works without PyQt6 installed.
+    args = parse_args(sys.argv[1:])
+    _debug_log(args.debug, f"parsed args: {args}")
+
+    # Defer Qt imports until we actually want to build a window.
+    from lovely_pet.app import build_application, install_signal_handlers
+    from lovely_pet.media import MediaCanvas
+    from lovely_pet.window import PetWindow
+
     app = build_application(sys.argv)
     install_signal_handlers(app)
+    _debug_log(args.debug, f"Qt platform: {app.platformName()}")
 
-    window = PetWindow(corner=Corner.BOTTOM_RIGHT, margin=32)
+    window = PetWindow(corner=args.corner, margin=args.margin)
     window.setWindowTitle("Lovely Pet")
 
     canvas = MediaCanvas(window)
-    source = _resolve_source(sys.argv)
+    source = args.source if args.source is not None else DEFAULT_SAMPLE
+    _debug_log(args.debug, f"loading source: {source!r}")
+
     if os.path.isfile(source):
         try:
             canvas.set_source(source)
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
-            print(f"[lovely-pet] could not load {source!r}: {exc}", file=sys.stderr)
+            print(
+                f"[lovely-pet] could not load {source!r}: {exc}",
+                file=sys.stderr,
+            )
     else:
         print(
             f"[lovely-pet] no source file at {source!r}. "
@@ -51,12 +60,24 @@ def main() -> int:
             "'python pet.py /path/to/pet.gif'.",
             file=sys.stderr,
         )
-        # Resize to a small placeholder so the window is visible for
-        # verifying the click-through overlay even with no media.
-        window.resize(128, 128)
+        window.resize(128, 128)  # visible placeholder for empty state
 
-    if canvas.native_size().isValid():
-        window.resize_to(canvas.native_size())
+    native = canvas.native_size()
+    if native.isValid():
+        if args.size_percent != 100:
+            scaled = native * (args.size_percent / 100.0)
+            scaled.setWidth(max(1, int(scaled.width())))
+            scaled.setHeight(max(1, int(scaled.height())))
+            window.resize_to(scaled)
+        else:
+            window.resize_to(native)
+
+    _debug_log(
+        args.debug,
+        f"window size: {window.size().width()}x{window.size().height()} "
+        f"at {window.pos().x()},{window.pos().y()}",
+    )
+
     window.show()
     canvas.show()
 

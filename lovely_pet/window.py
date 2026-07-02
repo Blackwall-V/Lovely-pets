@@ -19,35 +19,13 @@ excludes taskbars / docks so the pet always sits on visible pixels.
 """
 from __future__ import annotations
 
-from enum import Enum
 from typing import Optional
 
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QWidget
 
-
-class Corner(str, Enum):
-    """Anchor corner for the pet window on its screen."""
-
-    TOP_LEFT = "top-left"
-    TOP_RIGHT = "top-right"
-    BOTTOM_LEFT = "bottom-left"
-    BOTTOM_RIGHT = "bottom-right"
-    CENTER = "center"
-
-    @classmethod
-    def parse(cls, value: Optional[str]) -> "Corner":
-        if value is None:
-            return cls.BOTTOM_RIGHT
-        try:
-            return cls(value.lower())
-        except ValueError as exc:
-            raise ValueError(
-                f"Unknown corner '{value}'. Valid: "
-                f"{', '.join(c.value for c in cls)}"
-            ) from exc
-
+from lovely_pet.position import Corner
 
 DEFAULT_MARGIN_PX = 32
 MAX_SCREEN_FRACTION = 0.5  # Cap pet size at half the screen
